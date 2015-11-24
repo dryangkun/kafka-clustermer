@@ -64,8 +64,8 @@ public class FetcherContainer implements Comparable<FetcherContainer> {
         fetchers.clear();
     }
 
-    public ClusterConsumer getClusterConsumer() {
-        return clusterConsumer;
+    public void refreshFetcher(Fetcher oldFetcher) throws Exception {
+        clusterConsumer.getMetaRefresh().refresh(oldFetcher);
     }
 
     public int compareTo(FetcherContainer container) {

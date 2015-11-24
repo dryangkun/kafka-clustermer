@@ -6,6 +6,7 @@ import net.openhft.chronicle.map.ChronicleMapBuilder;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  * chronic-map is the map that different processes can share,
  * detail see http://chronicle.software/products/chronicle-map/
  */
-public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> {
+public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> implements Serializable {
 
     private int port = 8076;
     private List<InetSocketAddress> endpoints = new ArrayList<InetSocketAddress>();

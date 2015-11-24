@@ -2,7 +2,9 @@ package com.github.dryangkun.kafka.clustermer.storage;
 
 import com.github.dryangkun.kafka.clustermer.ClusterConfig;
 
-public abstract class StorageBuilder<A extends Storage> {
+import java.io.Serializable;
+
+public abstract class StorageBuilder<A extends Storage> implements Serializable {
 
     public static StorageBuilder newDefaultBuilder() {
         return new ChronicleStorageBuilder();

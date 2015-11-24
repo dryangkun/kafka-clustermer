@@ -56,7 +56,7 @@ public class ClusterConsumerTest {
                                     }
                                     fetcher.commit();
                                     fetcher.broken();
-                                    container.getClusterConsumer().refresh(fetcher);
+                                    container.refreshFetcher(fetcher);
                                     Thread.sleep(1000);
                                 }
                             }

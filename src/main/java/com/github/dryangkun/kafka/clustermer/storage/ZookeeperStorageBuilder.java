@@ -5,11 +5,13 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 
+import java.io.Serializable;
+
 /**
  * Compatible for high-level consumer,
  * Save offset to path "{zkRoot}/{groupId}/offsets/{topic}/{partitionId}"
  */
-public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
+public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> implements Serializable {
 
     private String zkRoot = "/";
     private String groupId;
@@ -17,11 +19,15 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
     private String connectString;
     private Integer sessionTimeoutMs = null;
     private Integer connectionTimeoutMs = null;
-    private RetryPolicy retryPolicy;
+    private RetryPolicyFactory retryPolicyFactory;
+
+    public interface RetryPolicyFactory extends Serializable {
+        RetryPolicy newRetryPolicy();
+    }
 
     /**
-     * @param zkRoot
-     * @return
+     * @param zkRoot zookeeper root path
+     * @return this
      */
     public ZookeeperStorageBuilder setZkRoot(String zkRoot) {
         if (zkRoot == null || zkRoot.length() == 0) {
@@ -38,10 +44,8 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
     }
 
     /**
-     * must
-     * set consumer group id
-     * @param groupId
-     * @return
+     * @param groupId consumer group id
+     * @return this
      */
     public ZookeeperStorageBuilder setGroupId(String groupId) {
         if (groupId.contains("/")) {
@@ -53,9 +57,8 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
 
     /**
      * must
-     * set zookeeper connect address, eg:
-     * @param connectString
-     * @return
+     * @param connectString zookeeper connect address
+     * @return this
      */
     public ZookeeperStorageBuilder setConnectString(String connectString) {
         this.connectString = connectString;
@@ -63,10 +66,9 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
     }
 
     /**
-     * set session and connection timeout ms
-     * @param sessionTimeoutMs
-     * @param connectionTimeoutMs
-     * @return
+     * @param sessionTimeoutMs session timeout ms
+     * @param connectionTimeoutMs connection timeout ms
+     * @return this
      */
     public ZookeeperStorageBuilder setTimeoutMs(int sessionTimeoutMs, int connectionTimeoutMs) {
         this.sessionTimeoutMs = sessionTimeoutMs;
@@ -75,19 +77,22 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
     }
 
     /**
-     * set retry policy default ExponentialBackoffRetry(200, 3)
-     * @param retryPolicy
-     * @return
+     * @param retryPolicyFactory retry policy factory
+     * @return this
      */
-    public ZookeeperStorageBuilder setRetryPolicy(RetryPolicy retryPolicy) {
-        this.retryPolicy = retryPolicy;
+    public ZookeeperStorageBuilder setRetryPolicy(RetryPolicyFactory retryPolicyFactory) {
+        this.retryPolicyFactory = retryPolicyFactory;
         return this;
     }
 
     @Override
     public ZookeeperStorage newStorage() throws Exception {
-        if (retryPolicy == null) {
+        RetryPolicy retryPolicy;
+
+        if (retryPolicyFactory == null) {
             retryPolicy = new ExponentialBackoffRetry(200, 3);
+        } else {
+            retryPolicy = retryPolicyFactory.newRetryPolicy();
         }
         CuratorFramework client;
         if (sessionTimeoutMs == null) {
@@ -96,8 +101,16 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> {
             client = CuratorFrameworkFactory.newClient(connectString,
                     sessionTimeoutMs, connectionTimeoutMs, retryPolicy);
         }
+        if (groupId == null) {
+            groupId = clusterConfig.getClientId();
+        }
+
         return new ZookeeperStorage(
                 (zkRoot.length() == 1 ? zkRoot : zkRoot + "/") + groupId + "/offsets",
                 client);
+    }
+
+    public boolean isEmptyConnectString() {
+        return connectString == null;
     }
 }

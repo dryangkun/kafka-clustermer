@@ -192,6 +192,11 @@ public class Fetcher implements Comparable<Fetcher> {
         pendingOffset = messageAndOffset.nextOffset();
     }
 
+    public void commit(long offset) throws Exception {
+        pendingOffset = offset;
+        commit();
+    }
+
     public void commit() throws Exception {
         if (pendingOffset != offset) {
             int _try = 3;

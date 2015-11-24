@@ -1,17 +1,17 @@
 package com.github.dryangkun.kafka.clustermer;
 
 import com.github.dryangkun.kafka.clustermer.coordinator.Coordinator;
-import com.github.dryangkun.kafka.clustermer.storage.Storage;
 import com.github.dryangkun.kafka.clustermer.storage.StorageBuilder;
 import kafka.api.FetchRequest;
 import kafka.api.OffsetRequest;
 
+import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeSet;
 
-public class ClusterConfig {
+public class ClusterConfig implements Serializable {
 
     private int soTimeout = 0;
     private int bufferSize = 2 * 1024 * 1024;
@@ -24,6 +24,7 @@ public class ClusterConfig {
     private Set<Broker> metaBrokers = new TreeSet<Broker>();
     private int concurrency = 1;
     private int metaInterval = 60;
+    private MetaRefresh.Factory metaRrefreshFactory;
 
     private Coordinator coordinator;
     private StorageBuilder storageBuilder;
@@ -36,8 +37,8 @@ public class ClusterConfig {
 
     /**
      * socket timeout to kafka simple consumer socket, default 0, never timeout
-     * @param soTimeout
-     * @return
+     * @param soTimeout socket timeout
+     * @return this
      */
     public ClusterConfig setSoTimeout(int soTimeout) {
         this.soTimeout = soTimeout;
@@ -49,9 +50,8 @@ public class ClusterConfig {
     }
 
     /**
-     * socket buffer size, default 2m
-     * @param bufferSize
-     * @return
+     * @param bufferSize socket buffer size, default 2m
+     * @return this
      */
     public ClusterConfig setBufferSize(int bufferSize) {
         this.bufferSize = bufferSize;
@@ -66,8 +66,8 @@ public class ClusterConfig {
     }
 
     /**
-     * set consumer clientid
-     * @return
+     * @param clientId consumer clientid
+     * @return this
      */
     public ClusterConfig setClientId(String clientId) {
         this.clientId = clientId;
@@ -79,9 +79,8 @@ public class ClusterConfig {
     }
 
     /**
-     * simple consumer fetch bytes per request
-     * @param fetchSize
-     * @return
+     * @param fetchSize simple consumer fetch bytes per request
+     * @return this
      */
     public ClusterConfig setFetchSize(int fetchSize) {
         this.fetchSize = fetchSize;
@@ -93,9 +92,8 @@ public class ClusterConfig {
     }
 
     /**
-     * simple consumer fetch wait max microseconds
-     * @param maxWait
-     * @return
+     * @param maxWait simple consumer fetch wait max microseconds
+     * @return this
      */
     public ClusterConfig setMaxWait(int maxWait) {
         this.maxWait = maxWait;
@@ -107,9 +105,8 @@ public class ClusterConfig {
     }
 
     /**
-     * simple consumer fetch min bytes
-     * @param minBytes
-     * @return
+     * @param minBytes simple consumer fetch min bytes
+     * @return this
      */
     public ClusterConfig setMinBytes(int minBytes) {
         this.minBytes = minBytes;
@@ -118,9 +115,8 @@ public class ClusterConfig {
 
     /**
      * must
-     * fetch topics meta info broker list
-     * @param metaBrokers
-     * @return
+     * @param metaBrokers fetch topics meta info broker list
+     * @return this
      */
     public ClusterConfig setMetaBrokers(Broker... metaBrokers) {
         Collections.addAll(this.metaBrokers, metaBrokers);
@@ -137,9 +133,8 @@ public class ClusterConfig {
 
     /**
      * must
-     * fetch topics meta info broker list
      * @param brokerList host1:port1,host2:port2
-     * @return
+     * @return this
      */
     public ClusterConfig setMetaBrokers(String brokerList) {
         String[] items = brokerList.split(",");
@@ -167,9 +162,8 @@ public class ClusterConfig {
     }
 
     /**
-     * number of max threads to consume partitions in current process, default 1
-     * @param concurrency
-     * @return
+     * @param concurrency number of max threads to consume partitions in current process, default 1
+     * @return this
      */
     public ClusterConfig setConcurrency(int concurrency) {
         this.concurrency = concurrency;
@@ -181,9 +175,8 @@ public class ClusterConfig {
     }
 
     /**
-     * seconds of refresh topics meta info
-     * @param metaInterval
-     * @return
+     * @param metaInterval seconds of refresh topics meta info
+     * @return this
      */
     public ClusterConfig setMetaInterval(int metaInterval) {
         this.metaInterval = metaInterval;
@@ -214,12 +207,20 @@ public class ClusterConfig {
     }
 
     /**
-     * fetcher init offset mode
-     * @param fetcherMode
-     * @return
+     * @param fetcherMode fetcher init offset mode
+     * @return this
      */
     public ClusterConfig setFetcherMode(FetcherMode fetcherMode) {
         this.fetcherMode = fetcherMode;
+        return this;
+    }
+
+    public MetaRefresh.Factory getMetaRrefreshFactory() {
+        return metaRrefreshFactory;
+    }
+
+    public ClusterConfig setMetaRrefreshFactory(MetaRefresh.Factory metaRrefreshFactory) {
+        this.metaRrefreshFactory = metaRrefreshFactory;
         return this;
     }
 }

@@ -3,9 +3,10 @@ package com.github.dryangkun.kafka.clustermer.coordinator;
 import com.github.dryangkun.kafka.clustermer.*;
 import org.apache.kafka.common.utils.Crc32;
 
+import java.io.Serializable;
 import java.util.*;
 
-public class DynamicCoordinator implements Coordinator {
+public class DynamicCoordinator implements Coordinator, Serializable {
 
     private int total;
     private int index;
@@ -14,19 +15,20 @@ public class DynamicCoordinator implements Coordinator {
 
     /**
      * must
-     * set topics for consumer
-     * @param topics
+     * @param topics topics for consumer
      */
-    public void setTopics(String... topics) {
+    public DynamicCoordinator setTopics(String... topics) {
         this.topics = new ArrayList<String>(topics.length);
         Collections.addAll(this.topics, topics);
+        return this;
     }
 
     /**
      * @see DynamicCoordinator#setTopics(String...)
      */
-    public void setTopics(Collection<String> topics) {
+    public DynamicCoordinator setTopics(Collection<String> topics) {
         this.topics.addAll(topics);
+        return this;
     }
 
     /**
@@ -34,9 +36,10 @@ public class DynamicCoordinator implements Coordinator {
      * @param index current consumers index to all
      * @param total number of all consumers
      */
-    public void setIndexAndTotal(int index, int total) {
+    public DynamicCoordinator setIndexAndTotal(int index, int total) {
         this.index = index;
         this.total = total;
+        return this;
     }
 
     public List<Fetcher> coordinate(ClusterConsumer clusterConsumer) throws Exception {

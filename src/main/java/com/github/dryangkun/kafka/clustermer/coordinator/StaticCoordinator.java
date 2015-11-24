@@ -5,9 +5,10 @@ import com.github.dryangkun.kafka.clustermer.ClusterConsumer;
 import com.github.dryangkun.kafka.clustermer.Fetcher;
 import com.github.dryangkun.kafka.clustermer.Partition;
 
+import java.io.Serializable;
 import java.util.*;
 
-public class StaticCoordinator implements Coordinator {
+public class StaticCoordinator implements Coordinator, Serializable {
 
     private final Map<String, Set<Partition>> topicParts = new TreeMap<String, Set<Partition>>();
 

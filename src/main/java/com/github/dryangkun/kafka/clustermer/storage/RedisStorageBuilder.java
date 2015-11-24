@@ -4,7 +4,9 @@ import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Protocol;
 
-public class RedisStorageBuilder extends StorageBuilder<RedisStorage> {
+import java.io.Serializable;
+
+public class RedisStorageBuilder extends StorageBuilder<RedisStorage> implements Serializable {
 
     private int port = 6379;
     private String host;

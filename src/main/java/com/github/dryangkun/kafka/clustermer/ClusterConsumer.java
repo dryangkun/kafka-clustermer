@@ -11,9 +11,6 @@ import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class ClusterConsumer {
 
@@ -23,16 +20,12 @@ public class ClusterConsumer {
     private final Set<Broker> metaBrokers;
 
     private final Storage storage;
-    private final Coordinator coordinator;
-    private final int metaInterval;
+    protected final Coordinator coordinator;
 
-    private final List<FetcherContainer> fetcherContainers;
+    protected final List<FetcherContainer> fetcherContainers;
     private final FetcherConfig fetcherConfig;
 
-    private boolean closed = false;
-    private final Refresher refresher = new Refresher();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
+    private final MetaRefresh metaRefresh;
 
     public ClusterConsumer(ClusterConfig config) throws Exception {
         connections = new Connections(config);
@@ -40,116 +33,22 @@ public class ClusterConsumer {
 
         storage = config.getStorageBuilder().newStorage();
         coordinator = config.getCoordinator();
-        metaInterval = config.getMetaInterval();
 
         fetcherContainers = new ArrayList<FetcherContainer>(config.getConcurrency());
         for (int i = 0; i < config.getConcurrency(); i++) {
             fetcherContainers.add(new FetcherContainer(i, this));
         }
         fetcherConfig = new FetcherConfig(storage, config);
+
+        MetaRefresh.Factory metaRefreshFactory = config.getMetaRrefreshFactory();
+        if (metaRefreshFactory == null) {
+            metaRefreshFactory = new AsyncMetaRefresh.Factory();
+        }
+        metaRefresh = metaRefreshFactory.newRefresher(config.getMetaInterval(), this);
     }
 
     public synchronized void start() throws Exception {
-        refresher.dispatch();
-        scheduler.schedule(new Runnable() {
-            public void run() {
-                try {
-                    refresher.dispatch();
-                } catch (Exception e) {
-                    LOG.error("dispatch fetcher fail", e);
-                }
-            }
-        }, metaInterval, TimeUnit.SECONDS);
-    }
-
-    public void refresh(final Fetcher fetcher) {
-        scheduler.submit(new Runnable() {
-            public void run() {
-                try {
-                    refresher.refresh(fetcher);
-                } catch (Exception e) {
-                    LOG.error("refresh fetcher fail=" + fetcher, e);
-                }
-            }
-        });
-    }
-
-    private class Refresher {
-
-        private int next = 0;
-        private final Map<Partition, Fetcher> partFetchers = new TreeMap<Partition, Fetcher>();
-
-        private synchronized FetcherContainer getNextFetchSet() {
-            FetcherContainer fetcherSet = fetcherContainers.get(next);
-            if ((++next) == fetcherContainers.size()) {
-                next = 0;
-            }
-            return fetcherSet;
-        }
-
-        private synchronized void refresh(Fetcher oldFetcher) throws Exception {
-            if (closed) {
-                return;
-            }
-
-            Partition part = oldFetcher.getPart();
-            FetcherContainer container = oldFetcher.getContainer();
-            Map<Partition, Broker> partBrokers = findPartBrokers(part.getTopic());
-
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("refresh closing old fetcher=" + oldFetcher);
-            }
-            oldFetcher.closing();
-            container.send(oldFetcher);
-
-            if (partBrokers.containsKey(part)) {
-                Broker broker = partBrokers.get(part);
-                Fetcher fetcher = newFetcher(broker, part);
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("refresh open new fetcher=" + fetcher);
-                }
-
-                fetcher.setContainer(container);
-                container.send(fetcher);
-                partFetchers.put(part, fetcher);
-            } else {
-                partFetchers.remove(part);
-            }
-        }
-
-        private synchronized void dispatch() throws Exception {
-            if (closed) {
-                return;
-            }
-
-            List<Fetcher> fetchers = coordinator.coordinate(ClusterConsumer.this);
-            for (Fetcher fetcher : fetchers) {
-                if (!partFetchers.containsKey(fetcher.getPart())) {
-                    FetcherContainer container = getNextFetchSet();
-                    fetcher.setContainer(container);
-
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("new fetcher=" + fetcher + " for container-" + container.getId());
-                    }
-                    container.send(fetcher);
-                    partFetchers.put(fetcher.getPart(), fetcher);
-                } else {
-                    Fetcher oldFetcher = partFetchers.get(fetcher.getPart());
-                    FetcherContainer container = oldFetcher.getContainer();
-
-                    if (!fetcher.equals(oldFetcher)) {
-                        LOG.debug("new fetcher=" + fetcher + " replace old=" + oldFetcher);
-
-                        oldFetcher.closing();
-                        container.send(oldFetcher);
-
-                        fetcher.setContainer(container);
-                        container.send(fetcher);
-                        partFetchers.put(fetcher.getPart(), fetcher);
-                    }
-                }
-            }
-        }
+        metaRefresh.start();
     }
 
     public FetcherConfig getFetcherConfig() {
@@ -218,14 +117,15 @@ public class ClusterConsumer {
     }
 
     public synchronized void close() {
-        scheduler.shutdown();
-        synchronized (refresher) {
-            closed = true;
-        }
+        metaRefresh.close();
         storage.close();
     }
 
     public synchronized Collection<FetcherContainer> getFetcherContainers() {
         return fetcherContainers;
+    }
+
+    public MetaRefresh getMetaRefresh() {
+        return metaRefresh;
     }
 }
