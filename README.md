@@ -60,8 +60,8 @@ ExecutorService service = Executors.newFixedThreadPool(containers.size());
 for (final FetcherContainer container : containers) {
     service.submit(new Runnable() {
         public void run() {
-            try {
-                for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 2; i++) {
+                try {
                     Collection<Fetcher> fetchers = container.getFetchers();
                     for (Fetcher fetcher : fetchers) {
                         if (!fetcher.isBroken()) {
@@ -71,16 +71,17 @@ for (final FetcherContainer container : containers) {
                                         + new String(Fetcher.getBytes(messageAndOffset)));
                                 fetcher.mark(messageAndOffset);
                             }
-                            fetcher.commit();
-                            fetcher.broken();
-                            container.getClusterConsumer().refresh(fetcher);
-                            Thread.sleep(1000);
                         }
                     }
-                
+                    fetcher.commit();
+                } catch (KafkaException e) {
+                    e.printStackTrace();
+                    fetcher.broken();
+                    container.getClusterConsumer().refresh(fetcher);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+            
             }
             container.closeAllFetchers();
         }
