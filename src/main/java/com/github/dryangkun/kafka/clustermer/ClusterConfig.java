@@ -7,6 +7,7 @@ import kafka.api.FetchRequest;
 import kafka.api.OffsetRequest;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -132,6 +133,29 @@ public class ClusterConfig {
     public ClusterConfig setMetaBrokers(Set<Broker> metaBrokers) {
         this.metaBrokers = metaBrokers;
         return this;
+    }
+
+    /**
+     * must
+     * fetch topics meta info broker list
+     * @param brokerList host1:port1,host2:port2
+     * @return
+     */
+    public ClusterConfig setMetaBrokers(String brokerList) {
+        String[] items = brokerList.split(",");
+        Set<Broker> brokers = new HashSet<Broker>(items.length);
+
+        for (String item : items) {
+            String[] hostPort = item.split(":");
+            if (hostPort.length == 1) {
+                brokers.add(new Broker(hostPort[0]));
+            } else {
+                String host = hostPort[0];
+                int port = Integer.parseInt(hostPort[1]);
+                brokers.add(new Broker(host, port));
+            }
+        }
+        return setMetaBrokers(brokers);
     }
 
     public Set<Broker> getMetaBrokers() {

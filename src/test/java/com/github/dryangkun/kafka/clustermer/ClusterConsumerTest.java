@@ -8,6 +8,9 @@ import org.junit.Test;
 import redis.clients.jedis.Jedis;
 
 import java.util.Collection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class ClusterConsumerTest {
 
@@ -35,29 +38,40 @@ public class ClusterConsumerTest {
         storageInit.init((A) consumer.getFetcherConfig().storage);
 
         Collection<FetcherContainer> containers = consumer.getFetcherContainers();
-        FetcherContainer container = containers.iterator().next();
+        ExecutorService service = Executors.newFixedThreadPool(containers.size());
 
-        for (int i = 0; i < 2; i++) {
-            Collection<Fetcher> fetchers = container.getFetchers();
-            for (Fetcher fetcher : fetchers) {
-                if (!fetcher.isBroken()) {
-                    ByteBufferMessageSet messageSet = fetcher.fetch();
-                    for (MessageAndOffset messageAndOffset : messageSet) {
-                        System.out.println(messageAndOffset.nextOffset() + "\t"
-                                + new String(Fetcher.getBytes(messageAndOffset)));
-                        fetcher.mark(messageAndOffset);
+        for (final FetcherContainer container : containers) {
+            service.submit(new Runnable() {
+                public void run() {
+                    try {
+                        for (int i = 0; i < 2; i++) {
+                            Collection<Fetcher> fetchers = container.getFetchers();
+                            for (Fetcher fetcher : fetchers) {
+                                if (!fetcher.isBroken()) {
+                                    ByteBufferMessageSet messageSet = fetcher.fetch();
+                                    for (MessageAndOffset messageAndOffset : messageSet) {
+                                        System.out.println(messageAndOffset.nextOffset() + "\t"
+                                                + new String(Fetcher.getBytes(messageAndOffset)));
+                                        fetcher.mark(messageAndOffset);
+                                    }
+                                    fetcher.commit();
+                                    fetcher.broken();
+                                    container.getClusterConsumer().refresh(fetcher);
+                                    Thread.sleep(1000);
+                                }
+                            }
+
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                    fetcher.commit();
-                    fetcher.broken();
-                    consumer.refresh(fetcher);
-
-                    Thread.sleep(1000);
+                    container.closeAllFetchers();
                 }
-            }
+            });
         }
 
+        while (!service.awaitTermination(1L, TimeUnit.SECONDS));
         consumer.close();
-        container.closeAllFetchers();
     }
 
     @Test public void testChronic() throws Exception {

@@ -7,6 +7,10 @@ public class Broker implements Comparable<Broker>, Serializable {
     private final String host;
     private final int port;
 
+    public Broker(String host) {
+        this(host, 9092);
+    }
+
     public Broker(kafka.cluster.Broker broker) {
         this(broker.host(), broker.port());
     }

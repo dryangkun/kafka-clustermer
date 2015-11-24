@@ -64,6 +64,10 @@ public class FetcherContainer implements Comparable<FetcherContainer> {
         fetchers.clear();
     }
 
+    public ClusterConsumer getClusterConsumer() {
+        return clusterConsumer;
+    }
+
     public int compareTo(FetcherContainer container) {
         return fetchers.size() - container.fetchers.size();
     }

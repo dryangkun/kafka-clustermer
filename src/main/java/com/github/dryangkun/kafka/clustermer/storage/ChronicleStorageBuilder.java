@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -54,6 +55,24 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> {
      */
     public ChronicleStorageBuilder addEndpoint(String host, int port) {
         endpoints.add(new InetSocketAddress(host, port));
+        return this;
+    }
+
+    /**
+     * must
+     * other consumer processes that consume different partitions
+     * @param hostList host1:port1,host2:port2
+     * @return
+     */
+    public ChronicleStorageBuilder addEndpoints(String hostList) {
+        String[] items = hostList.split(",");
+        for (String item : items) {
+            String[] hostPort = item.split(":");
+
+            String host = hostPort[0];
+            int port = Integer.parseInt(hostPort[1]);
+            endpoints.add(new InetSocketAddress(host, port));
+        }
         return this;
     }
 
