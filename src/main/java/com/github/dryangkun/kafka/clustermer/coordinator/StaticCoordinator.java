@@ -1,9 +1,6 @@
 package com.github.dryangkun.kafka.clustermer.coordinator;
 
-import com.github.dryangkun.kafka.clustermer.Broker;
-import com.github.dryangkun.kafka.clustermer.ClusterConsumer;
-import com.github.dryangkun.kafka.clustermer.Fetcher;
-import com.github.dryangkun.kafka.clustermer.Partition;
+import com.github.dryangkun.kafka.clustermer.*;
 
 import java.io.Serializable;
 import java.util.*;
@@ -13,10 +10,9 @@ public class StaticCoordinator implements Coordinator, Serializable {
     private final Map<String, Set<Partition>> topicParts = new TreeMap<String, Set<Partition>>();
 
     /**
-     * add a topic and its partitions for consumer
-     * @param topic
-     * @param partIds
-     * @return
+     * @param topic topic
+     * @param partIds partIds for consumer
+     * @return this
      */
     public StaticCoordinator addTopicParts(String topic, int... partIds) {
         for (int partition : partIds) {
@@ -33,9 +29,8 @@ public class StaticCoordinator implements Coordinator, Serializable {
     }
 
     /**
-     * add partitions for consumer
-     * @param parts
-     * @return
+     * @param parts partitions for consumer
+     * @return this
      */
     public StaticCoordinator addParts(Partition... parts) {
         for (Partition partition : parts) {
@@ -49,25 +44,26 @@ public class StaticCoordinator implements Coordinator, Serializable {
         return this;
     }
 
-    public List<Fetcher> coordinate(ClusterConsumer clusterConsumer) throws Exception {
+    public List<String> getTopics() {
+        return new ArrayList<String>(topicParts.keySet());
+    }
+
+    public LinkedHashMap<Partition, Broker> coordinate(Map<Partition, Broker> partBrokers) throws Exception {
         if (topicParts.isEmpty()) {
             throw new IllegalArgumentException("addTopicParts or addParts should call before");
         }
 
-        List<Fetcher> fetchers = new ArrayList<Fetcher>();
-        Map<Partition, Broker> partBrokers =
-                clusterConsumer.findPartBrokers(new ArrayList<String>(topicParts.keySet()));
-
+        LinkedHashMap<Partition, Broker> result = new LinkedHashMap<Partition, Broker>();
         for (Set<Partition> parts : topicParts.values()) {
             for (Partition part : parts) {
                 Broker broker = partBrokers.get(part);
                 if (broker == null) {
-                    //todo log warn
+                    throw new Exception("partition=" + part + " find no broker");
                 } else {
-                    fetchers.add(clusterConsumer.newFetcher(broker, part));
+                    result.put(part, broker);
                 }
             }
         }
-        return fetchers;
+        return result;
     }
 }

@@ -1,5 +1,6 @@
 package com.github.dryangkun.kafka.clustermer.storage;
 
+import com.github.dryangkun.kafka.clustermer.ClusterConfig;
 import net.openhft.chronicle.hash.replication.TcpTransportAndNetworkConfig;
 import net.openhft.chronicle.map.ChronicleMap;
 import net.openhft.chronicle.map.ChronicleMapBuilder;
@@ -10,7 +11,6 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -29,11 +29,14 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
     private TcpTransportAndNetworkConfig tcpTransportAndNetworkConfig;
     private ChronicleMapBuilder<String, Long> chronicleMapBuilder;
 
+    public ChronicleStorageBuilder(ClusterConfig clusterConfig) {
+        super(clusterConfig);
+    }
+
     /**
      * must
-     * chronic map in current consumer process use socket to communicate with others
-     * @param port
-     * @return
+     * @param port port to communicate with others, default 8076
+     * @return this
      */
     public ChronicleStorageBuilder setPort(int port) {
         this.port = port;
@@ -42,9 +45,8 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
 
     /**
      * must
-     * other consumer processes that consume different partitions
-     * @param address
-     * @return
+     * @param address other consumer processes that consume different partitions
+     * @return this
      */
     public ChronicleStorageBuilder addEndpoint(InetSocketAddress address) {
         endpoints.add(address);
@@ -61,9 +63,8 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
 
     /**
      * must
-     * other consumer processes that consume different partitions
      * @param hostList host1:port1,host2:port2
-     * @return
+     * @return this
      */
     public ChronicleStorageBuilder addEndpoints(String hostList) {
         String[] items = hostList.split(",");
@@ -78,9 +79,8 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
     }
 
     /**
-     * chronic map processes heartbeat to each other interval seconds
-     * @param heartbeat
-     * @return
+     * @param heartbeat heartbeat to each other interval seconds
+     * @return this
      */
     public ChronicleStorageBuilder setHeartbeat(int heartbeat) {
         this.heartbeat = heartbeat;
@@ -89,9 +89,8 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
 
     /**
      * must
-     * each consumer process save offset data directory
-     * @param dataDir
-     * @return
+     * @param dataDir save offset data directory
+     * @return this
      */
     public ChronicleStorageBuilder setDataDir(File dataDir) {
         if (dataDir.exists()) {
@@ -119,9 +118,8 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
 
     /**
      * must
-     * chronic map id that different from others
-     * @param id
-     * @return
+     * @param id id that different from others
+     * @return this
      */
     public ChronicleStorageBuilder setId(byte id) {
         this.id = id;
@@ -141,7 +139,7 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
 
     /**
      * maybe user want to config other options, so can use this method to get object
-     * @return
+     * @return TcpTransportAndNetworkConfig
      */
     public TcpTransportAndNetworkConfig getTcpTransportAndNetworkConfig() {
         if (tcpTransportAndNetworkConfig == null) {
@@ -162,7 +160,7 @@ public class ChronicleStorageBuilder extends StorageBuilder<ChronicleStorage> im
 
     /**
      * maybe user want to config other options, so can use this method to get object
-     * @return
+     * @return ChronicleMapBuilder
      */
     public ChronicleMapBuilder<String, Long> getChronicleMapBuilder() {
         if (chronicleMapBuilder == null) {

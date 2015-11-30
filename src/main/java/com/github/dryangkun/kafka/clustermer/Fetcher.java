@@ -32,11 +32,10 @@ public class Fetcher implements Comparable<Fetcher> {
     private volatile FetcherContainer container;
     private volatile SimpleConsumer consumer;
 
-    private long offset = EMPTY_OFFSET;
-    private long pendingOffset;
+    private long commitedOffset = EMPTY_OFFSET;
+    private long uncommitedOffset = EMPTY_OFFSET;
 
     private volatile boolean closing = false;
-    private volatile boolean broken = false;
 
     public Fetcher(Broker broker, Partition partition,
                    FetcherConfig config) {
@@ -90,9 +89,7 @@ public class Fetcher implements Comparable<Fetcher> {
         if (obj == null || getClass() != obj.getClass()) {
             return false;
         }
-
-        Fetcher fetcher = (Fetcher) obj;
-        return fetcher.broken == broken && compareTo(fetcher) == 0;
+        return compareTo((Fetcher) obj) == 0;
     }
 
     @Override
@@ -123,58 +120,15 @@ public class Fetcher implements Comparable<Fetcher> {
         return consumer.getOffsetsBefore(request);
     }
 
-    private void initOffset() throws Exception {
-        if (config.mode.isStorage()) {
-            int _try = 3;
-            while (_try-- > 0) {
-                try {
-                    offset = config.storage.get(part);
-                    break;
-                } catch (Exception e) {
-                    if (_try == 0) {
-                        throw e;
-                    } else {
-                        Thread.sleep(200);
-                        LOG.error("get offset from storage fail, partition=" + part, e);
-                    }
-                }
-            }
-            if (offset != EMPTY_OFFSET) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("init offset from storage, partition=" + part + ", offset=" + offset);
-                }
-                return;
-            }
-        }
-
-        long whileTime = config.mode.isEarliest() ?
-                OffsetRequest.EarliestTime() :
-                OffsetRequest.LatestTime();
-        OffsetResponse response = getOffset(consumer, part, whileTime);
-        if (response.hasError()) {
-            short errorCode = response.errorCode(part.getTopic(), part.getId());
-            throw new KafkaException("offset request fail", broker, part, errorCode);
-        }
-        offset = response.offsets(part.getTopic(), part.getId())[0];
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("init offset from kafka, partition=" + part + ", offset=" + offset + ", is earliest=" + config.mode.isEarliest());
-        }
-    }
-
-    public boolean isBroken() {
-        return broken;
-    }
-
-    public void broken() {
-        broken = true;
-    }
-
-    public ByteBufferMessageSet fetch() throws Exception {
-        if (offset == EMPTY_OFFSET) {
-            initOffset();
-        }
-
-        pendingOffset = offset;
+    /**
+     * fetch request kafka partition by the offset,
+     * and if request fail, then throw KafkaException
+     * else throw Exception
+     * @param offset partition offset
+     * @return ByteBufferMessageSet
+     * @throws Exception
+     */
+    public ByteBufferMessageSet fetch(long offset) throws Exception {
         FetchRequest request = new FetchRequestBuilder()
                 .addFetch(part.getTopic(), part.getId(), offset, config.fetchSize)
                 .maxWait(config.maxWait)
@@ -188,32 +142,120 @@ public class Fetcher implements Comparable<Fetcher> {
         return response.messageSet(part.getTopic(), part.getId());
     }
 
-    public void mark(MessageAndOffset messageAndOffset) {
-        pendingOffset = messageAndOffset.nextOffset();
-    }
-
-    public void commit(long offset) throws Exception {
-        pendingOffset = offset;
-        commit();
-    }
-
-    public void commit() throws Exception {
-        if (pendingOffset != offset) {
+    /**
+     * init commited offset by fetcherConfig.mode
+     * @throws Exception
+     */
+    public void initCommitedOffset() throws Exception {
+        if (config.mode.isStorage()) {
             int _try = 3;
             while (_try-- > 0) {
                 try {
-                    config.storage.put(part, pendingOffset);
-                    offset = pendingOffset;
+                    commitedOffset = config.storage.get(part);
                     break;
                 } catch (Exception e) {
                     if (_try == 0) {
                         throw e;
                     } else {
                         Thread.sleep(200);
-                        LOG.error("put offset to storage fail, partition=" + part + ", offset=" + pendingOffset, e);
+                        LOG.error("get offset from storage fail, partition=" + part, e);
                     }
                 }
             }
+            if (commitedOffset != EMPTY_OFFSET) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("init offset from storage, partition=" + part + ", offset=" + commitedOffset);
+                }
+                return;
+            }
+        }
+
+        long whileTime = config.mode.isEarliest() ?
+                OffsetRequest.EarliestTime() :
+                OffsetRequest.LatestTime();
+        OffsetResponse response = getOffset(consumer, part, whileTime);
+        if (response.hasError()) {
+            short errorCode = response.errorCode(part.getTopic(), part.getId());
+            throw new KafkaException("offset request fail", broker, part, errorCode);
+        }
+        commitedOffset = response.offsets(part.getTopic(), part.getId())[0];
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("init offset from kafka, partition=" + part + ", offset=" + commitedOffset + ", is earliest=" + config.mode.isEarliest());
+        }
+    }
+
+    /**
+     * store offset and let commited offset = the offset
+     * @param offset storing offset
+     * @throws Exception
+     */
+    public void storeCommitedOffset(long offset) throws Exception {
+        int _try = 3;
+        while (_try-- > 0) {
+            try {
+                config.storage.put(part, offset);
+                commitedOffset = offset;
+                break;
+            } catch (Exception e) {
+                if (_try == 0) {
+                    throw e;
+                } else {
+                    Thread.sleep(200);
+                    LOG.error("put offset to storage fail, partition=" + part + ", offset=" + offset, e);
+                }
+            }
+        }
+    }
+
+    /**
+     * let uncommited offset = commited offset
+     * @throws Exception
+     */
+    public void reset() throws Exception {
+        uncommitedOffset = commitedOffset;
+    }
+
+    /**
+     * fetch request kafka partition by uncommited offset,
+     * and if commited offset is not inited, then call {@link #initCommitedOffset()},
+     * and if uncommited offset is not inited, then call {@link #reset()}
+     * @see #fetch()
+     * @return ByteBufferMessageSet
+     * @throws Exception
+     */
+    public ByteBufferMessageSet fetch() throws Exception {
+        if (commitedOffset == EMPTY_OFFSET) {
+            initCommitedOffset();
+        }
+        if (uncommitedOffset == EMPTY_OFFSET) {
+            reset();
+        }
+        return fetch(uncommitedOffset + 1);
+    }
+
+    /**
+     * let the uncommited offset = the offset
+     * @param offset the offset
+     */
+    public void mark(long offset) {
+        uncommitedOffset = offset;
+    }
+
+    /**
+     * @see #mark(long)
+     */
+    public void mark(MessageAndOffset messageAndOffset) {
+        uncommitedOffset = messageAndOffset.offset();
+    }
+
+    /**
+     * store uncommited offset
+     * @see #storeCommitedOffset(long)
+     * @throws Exception
+     */
+    public void commit() throws Exception {
+        if (uncommitedOffset != commitedOffset) {
+            storeCommitedOffset(uncommitedOffset);
         }
     }
 

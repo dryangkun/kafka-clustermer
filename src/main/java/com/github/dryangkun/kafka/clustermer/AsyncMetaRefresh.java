@@ -2,6 +2,7 @@ package com.github.dryangkun.kafka.clustermer;
 
 import org.apache.log4j.Logger;
 
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -15,9 +16,9 @@ public class AsyncMetaRefresh extends MetaRefresh {
 
     private final SyncMetaRefresh syncMetaRefresh;
 
-    public AsyncMetaRefresh(int metaInterval, ClusterConsumer clusterConsumer) {
-        super(metaInterval, clusterConsumer);
-        syncMetaRefresh = new SyncMetaRefresh.Factory().newRefresher(metaInterval, clusterConsumer);
+    public AsyncMetaRefresh(int metaInterval, Set<Broker> metaBrokers, ClusterConsumer clusterConsumer) {
+        super(metaInterval, metaBrokers, clusterConsumer);
+        syncMetaRefresh = new SyncMetaRefresh.Factory().newRefresher(metaInterval, metaBrokers, clusterConsumer);
     }
 
     @Override
@@ -25,10 +26,13 @@ public class AsyncMetaRefresh extends MetaRefresh {
         syncMetaRefresh.start();
         scheduler.schedule(new Runnable() {
             public void run() {
-                try {
-                    syncMetaRefresh.doRefresh();
-                } catch (Exception e) {
-                    LOG.error("start sync do refresh fail", e);
+                LOG.debug("schedule refresh meta");
+                if (!closed) {
+                    try {
+                        syncMetaRefresh.doRefresh();
+                    } catch (Exception e) {
+                        LOG.error("start sync do refresh fail", e);
+                    }
                 }
             }
         }, metaInterval, TimeUnit.SECONDS);
@@ -39,10 +43,12 @@ public class AsyncMetaRefresh extends MetaRefresh {
         if (!closed) {
             scheduler.submit(new Runnable() {
                 public void run() {
-                    try {
-                        syncMetaRefresh.doRefresh();
-                    } catch (Exception e) {
-                        LOG.error("refresh sync do refresh fail", e);
+                    if (!closed) {
+                        try {
+                            syncMetaRefresh.doRefresh();
+                        } catch (Exception e) {
+                            LOG.error("refresh sync do refresh fail", e);
+                        }
                     }
                 }
             });
@@ -56,10 +62,12 @@ public class AsyncMetaRefresh extends MetaRefresh {
         if (!closed) {
             scheduler.submit(new Runnable() {
                 public void run() {
-                    try {
-                        syncMetaRefresh.refresh(oldFetcher);
-                    } catch (Exception e) {
-                        LOG.error("refresh fetcher sync do refresh fail", e);
+                    if (!closed) {
+                        try {
+                            syncMetaRefresh.refresh(oldFetcher);
+                        } catch (Exception e) {
+                            LOG.error("refresh fetcher sync do refresh fail", e);
+                        }
                     }
                 }
             });
@@ -68,13 +76,19 @@ public class AsyncMetaRefresh extends MetaRefresh {
 
     @Override
     public void close() {
+        LOG.info("closing");
         closed = true;
-        scheduler.shutdown();
+        scheduler.shutdownNow();
+        syncMetaRefresh.close();
+        try {
+            while (!scheduler.awaitTermination(500L, TimeUnit.MILLISECONDS));
+        } catch (InterruptedException e) {}
+        LOG.info("closed");
     }
 
     public static class Factory implements MetaRefresh.Factory<AsyncMetaRefresh> {
-        public AsyncMetaRefresh newRefresher(int metaInterval, ClusterConsumer clusterConsumer) {
-            return new AsyncMetaRefresh(metaInterval, clusterConsumer);
+        public AsyncMetaRefresh newRefresher(int metaInterval, Set<Broker> metaBrokers, ClusterConsumer clusterConsumer) {
+            return new AsyncMetaRefresh(metaInterval, metaBrokers, clusterConsumer);
         }
     }
 }

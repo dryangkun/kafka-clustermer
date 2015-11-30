@@ -3,9 +3,12 @@ package com.github.dryangkun.kafka.clustermer.storage;
 import com.github.dryangkun.kafka.clustermer.Fetcher;
 import com.github.dryangkun.kafka.clustermer.Partition;
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.log4j.Logger;
 import org.apache.zookeeper.CreateMode;
 
 public class ZookeeperStorage implements Storage {
+
+    private final static Logger LOG = Logger.getLogger(ZookeeperStorage.class);
 
     private final String pathPrefix;
     private final CuratorFramework client;
@@ -53,7 +56,9 @@ public class ZookeeperStorage implements Storage {
     }
 
     public void close() {
+        LOG.info("closing");
         client.close();
+        LOG.info("closed");
     }
 
     private static byte[] toBytes(long value) {

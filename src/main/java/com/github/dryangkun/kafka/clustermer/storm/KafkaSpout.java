@@ -9,13 +9,12 @@ import backtype.storm.topology.base.BaseRichSpout;
 import backtype.storm.utils.Utils;
 import com.github.dryangkun.kafka.clustermer.*;
 import com.github.dryangkun.kafka.clustermer.coordinator.DynamicCoordinator;
-import com.github.dryangkun.kafka.clustermer.storage.StorageBuilder;
 import com.github.dryangkun.kafka.clustermer.storage.ZookeeperStorageBuilder;
 import kafka.javaapi.message.ByteBufferMessageSet;
 import kafka.message.Message;
 import kafka.message.MessageAndOffset;
-import storm.kafka.FailedFetchException;
-import storm.kafka.KafkaConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import storm.kafka.KeyValueSchemeAsMultiScheme;
 
 import java.nio.ByteBuffer;
@@ -23,61 +22,76 @@ import java.util.*;
 
 public class KafkaSpout extends BaseRichSpout {
 
+    private static final Logger LOG = LoggerFactory.getLogger(KafkaSpout.class);
+
     public static class MessageAndRealOffset {
         public Message msg;
+        public Partition part;
         public long offset;
 
-        public MessageAndRealOffset(Message msg, long offset) {
+        public MessageAndRealOffset(Message msg, Partition part, long offset) {
             this.msg = msg;
+            this.part = part;
             this.offset = offset;
         }
     }
 
-    private final SpoutConfig config;
+    private final SpoutConfig spoutConfig;
 
     private ClusterConsumer clusterConsumer;
     private FetcherContainer fetcherContainer;
     private SpoutOutputCollector collector;
 
     public KafkaSpout(SpoutConfig config) {
-        this.config = config;
+        this.spoutConfig = config;
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(config.scheme.getOutputFields());
+        declarer.declare(spoutConfig.scheme.getOutputFields());
     }
 
-    public void open(Map map, TopologyContext context, SpoutOutputCollector collector) {
+    @SuppressWarnings("unchecked")
+    public static String getStormZkConnectString(Map conf) {
+        List<String> hosts = (List<String>) conf.get(Config.STORM_ZOOKEEPER_SERVERS);
+        int port = ((Number) conf.get(Config.STORM_ZOOKEEPER_PORT)).intValue();
+        StringBuilder builder = new StringBuilder();
+        for (String host : hosts) {
+            builder.append(host).append(":").append(port).append(",");
+        }
+        return builder.substring(0, builder.length() - 1);
+    }
+
+    public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
         this.collector = collector;
 
         int totalTasks = context.getComponentTasks(context.getThisComponentId()).size();
         DynamicCoordinator coordinator = new DynamicCoordinator()
                 .setIndexAndTotal(context.getThisTaskIndex(), totalTasks)
-                .setTopics(config.topics);
-        config.clusterConfig.setCoordinator(coordinator);
+                .setTopics(spoutConfig.topics);
 
-        StorageBuilder storageBuilder = config.clusterConfig.getStorageBuilder();
-        if (storageBuilder instanceof ZookeeperStorageBuilder) {
-            ZookeeperStorageBuilder zookeeperStorageBuilder = (ZookeeperStorageBuilder) storageBuilder;
+        if (spoutConfig.storageBuilder == null) {
+            if (spoutConfig.groupId == null || spoutConfig.zkRoot == null) {
+                throw new RuntimeException("when SpoutConfig.storageBuilder is null, SpoutConfig.groupId and SpoutConfig.zkRoot should not be null");
+            }
 
-            if (zookeeperStorageBuilder.isEmptyConnectString()) {
-                String connectString = null;
-                {
-                    List<String> hosts = (List<String>) map.get(Config.STORM_ZOOKEEPER_SERVERS);
-                    int port = ((Number) map.get(Config.STORM_ZOOKEEPER_PORT)).intValue();
-                    StringBuilder builder = new StringBuilder();
-                    for (String host : hosts) {
-                        builder.append(host).append(":").append(port).append(",");
-                    }
-                    connectString = builder.substring(0, -1);
-                }
-                zookeeperStorageBuilder.setConnectString(connectString);
+            ZookeeperStorageBuilder storageBuilder = new ZookeeperStorageBuilder(spoutConfig.clusterConfig);
+            storageBuilder.setConnectString(getStormZkConnectString(conf))
+                    .setGroupId(spoutConfig.groupId)
+                    .setZkRoot(spoutConfig.zkRoot);
+        } else if (spoutConfig.storageBuilder instanceof ZookeeperStorageBuilder) {
+            ZookeeperStorageBuilder storageBuilder = (ZookeeperStorageBuilder) spoutConfig.storageBuilder;
+            if (storageBuilder.isEmptyConnectString()) {
+                storageBuilder.setConnectString(getStormZkConnectString(conf));
             }
         }
-        config.clusterConfig.setConcurrency(1);
-        config.clusterConfig.setMetaRrefreshFactory(new SyncMetaRefresh.Factory());
+
+        spoutConfig.clusterConfig.setConcurrency(1);
+        spoutConfig.clusterConfig.setMetaRrefreshFactory(new SyncMetaRefresh.Factory());
         try {
-            clusterConsumer = new ClusterConsumer(config.clusterConfig);
+            clusterConsumer = new ClusterConsumer(
+                    spoutConfig.clusterConfig, coordinator,
+                    spoutConfig.storageBuilder.newStorage());
+            clusterConsumer.start();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -89,37 +103,93 @@ public class KafkaSpout extends BaseRichSpout {
     private Iterator<Fetcher> iterator;
     private LinkedList<MessageAndRealOffset> pendings = new LinkedList<MessageAndRealOffset>();
 
-    public void nextTuple() {
-        if (pendings.isEmpty()) {
-            if (iterator == null || iterator.hasNext()) {
-                iterator = fetcherContainer.getFetchers().iterator();
-            }
+    private int _emitCount = 0;
+    private long _lastCommitTime = -1;
+    private Map<Partition, Long> partOffsets = new HashMap<Partition, Long>();
 
+    private void fill() {
+        if (iterator == null || !iterator.hasNext()) {
+            iterator = fetcherContainer.getFetchers().iterator();
+        }
+        while (iterator.hasNext()) {
             Fetcher fetcher = iterator.next();
             try {
                 ByteBufferMessageSet messageSet = fetcher.fetch();
                 for (MessageAndOffset msg : messageSet) {
-                    pendings.add(new MessageAndRealOffset(msg.message(), msg.offset()));
+                    pendings.add(new MessageAndRealOffset(
+                            msg.message(), fetcher.getPart(), msg.offset()));
+                    fetcher.mark(msg.offset());
                 }
-                if (!pendings.isEmpty()) {
-                    fetcher.commit(pendings.getLast().offset);
+                if (pendings.size() >= spoutConfig.pendingMaxSize) {
+                    break;
                 }
             } catch (KafkaException e) {
-                //todo refresh fetcher
+                if (e.needRefresh()) {
+                    LOG.error("get data from fetcher=" + fetcher + " fail, then refresh fetcher", e);
+                    fetcherContainer.refreshFetcher(fetcher);
+                } else {
+                    LOG.error("get data from fetcher=" + fetcher + " fail", e);
+                }
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                LOG.error("get data from fetcher=" + fetcher + " fail", e);
             }
         }
+    }
 
-        MessageAndRealOffset messageAndOffset = pendings.pollFirst();
-        if (messageAndOffset != null) {
-            Iterable<List<Object>> tups = generateTuples(config.scheme, messageAndOffset.msg);
+    public void nextTuple() {
+        if (pendings.isEmpty()) {
+            fill();
+        }
+
+        MessageAndRealOffset msg = pendings.pollFirst();
+        if (msg != null) {
+            Iterable<List<Object>> tups = generateTuples(spoutConfig.scheme, msg.msg);
             if (tups != null) {
                 for (List<Object> tup : tups) {
                     collector.emit(tup);
                 }
+                partOffsets.put(msg.part, msg.offset);
+                _emitCount++;
             }
         }
+
+        long now = System.currentTimeMillis();
+        if (_emitCount >= spoutConfig.commitPerEmitCount) {
+            commit(now);
+        } else if (now - _lastCommitTime >= spoutConfig.commitPerIntervalMs) {
+            commit(now);
+        }
+
+        try {
+            if (clusterConsumer.getMetaRefresh().refresh()) {
+                iterator = null;
+            }
+        } catch (Exception e) {
+            LOG.error("refresh meta fail", e);
+        }
+    }
+
+    public void commit(long now) {
+        List<Partition> removeParts = new ArrayList<Partition>();
+        for (Partition part : partOffsets.keySet()) {
+            Long offset = partOffsets.get(part);
+            Fetcher fetcher = fetcherContainer.getFetcher(part);
+
+            if (offset == null || fetcher == null) {
+                removeParts.add(part);
+            } else {
+                try {
+                    fetcher.storeCommitedOffset(offset);
+                } catch (Exception e) {
+                    LOG.error("store emited offset fail, fetcher=" + fetcher, e);
+                }
+            }
+        }
+        for (Partition part : removeParts) {
+            partOffsets.remove(part);
+        }
+        _emitCount = 0;
+        _lastCommitTime = now;
     }
 
     public static Iterable<List<Object>> generateTuples(MultiScheme scheme, Message msg) {
@@ -135,6 +205,11 @@ public class KafkaSpout extends BaseRichSpout {
             tups = scheme.deserialize(Utils.toByteArray(payload));
         }
         return tups;
+    }
+
+    @Override
+    public void deactivate() {
+        commit(System.currentTimeMillis());
     }
 
     @Override

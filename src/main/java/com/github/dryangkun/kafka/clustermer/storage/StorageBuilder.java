@@ -6,15 +6,11 @@ import java.io.Serializable;
 
 public abstract class StorageBuilder<A extends Storage> implements Serializable {
 
-    public static StorageBuilder newDefaultBuilder() {
-        return new ChronicleStorageBuilder();
-    }
+    protected final ClusterConfig clusterConfig;
 
-    protected ClusterConfig clusterConfig;
-
-    public abstract A newStorage() throws Exception;
-
-    public void setClusterConfig(ClusterConfig clusterConfig) {
+    public StorageBuilder(ClusterConfig clusterConfig) {
         this.clusterConfig = clusterConfig;
     }
+
+    public abstract A newStorage() throws Exception;
 }

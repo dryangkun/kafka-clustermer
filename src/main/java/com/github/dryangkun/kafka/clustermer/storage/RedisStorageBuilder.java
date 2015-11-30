@@ -1,5 +1,6 @@
 package com.github.dryangkun.kafka.clustermer.storage;
 
+import com.github.dryangkun.kafka.clustermer.ClusterConfig;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Protocol;
@@ -14,6 +15,10 @@ public class RedisStorageBuilder extends StorageBuilder<RedisStorage> implements
     private String auth = null;
 
     private String key;
+
+    public RedisStorageBuilder(ClusterConfig clusterConfig) {
+        super(clusterConfig);
+    }
 
     public RedisStorageBuilder setPort(int port) {
         this.port = port;

@@ -2,9 +2,7 @@ package com.github.dryangkun.kafka.clustermer;
 
 import org.apache.log4j.Logger;
 
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 
 public class SyncMetaRefresh extends MetaRefresh {
 
@@ -15,13 +13,13 @@ public class SyncMetaRefresh extends MetaRefresh {
 
     private long lastRefreshTime = -1;
 
-    public SyncMetaRefresh(int metaInterval, ClusterConsumer clusterConsumer) {
-        super(metaInterval, clusterConsumer);
+    public SyncMetaRefresh(int metaInterval, Set<Broker> metaBrokers, ClusterConsumer clusterConsumer) {
+        super(metaInterval, metaBrokers, clusterConsumer);
     }
 
     @Override
     public synchronized void start() throws Exception {
-        doRefresh();
+        refresh();
     }
 
     private synchronized FetcherContainer getNextFetchSet() {
@@ -43,9 +41,15 @@ public class SyncMetaRefresh extends MetaRefresh {
         return false;
     }
 
-    public synchronized void doRefresh() throws Exception {
-        List<Fetcher> fetchers = clusterConsumer.coordinator.coordinate(clusterConsumer);
-        for (Fetcher fetcher : fetchers) {
+    protected synchronized void doRefresh() throws Exception {
+        List<String> topics = clusterConsumer.coordinator.getTopics();
+        LinkedHashMap<Partition, Broker> partBrokers = clusterConsumer.coordinator.coordinate(
+                findPartBrokers(topics));
+
+        for (Partition part : partBrokers.keySet()) {
+            Broker broker = partBrokers.get(part);
+            Fetcher fetcher = new Fetcher(broker, part, clusterConsumer.fetcherConfig);
+
             if (!partFetchers.containsKey(fetcher.getPart())) {
                 FetcherContainer container = getNextFetchSet();
                 fetcher.setContainer(container);
@@ -77,7 +81,7 @@ public class SyncMetaRefresh extends MetaRefresh {
     public synchronized void refresh(Fetcher oldFetcher) throws Exception {
         Partition part = oldFetcher.getPart();
         FetcherContainer container = oldFetcher.getContainer();
-        Map<Partition, Broker> partBrokers = clusterConsumer.findPartBrokers(part.getTopic());
+        Map<Partition, Broker> partBrokers = findPartBrokers(part.getTopic());
 
         if (LOG.isDebugEnabled()) {
             LOG.debug("refresh closing old fetcher=" + oldFetcher);
@@ -87,7 +91,7 @@ public class SyncMetaRefresh extends MetaRefresh {
 
         if (partBrokers.containsKey(part)) {
             Broker broker = partBrokers.get(part);
-            Fetcher fetcher = clusterConsumer.newFetcher(broker, part);
+            Fetcher fetcher = new Fetcher(broker, part, clusterConsumer.fetcherConfig);
             if (LOG.isDebugEnabled()) {
                 LOG.debug("refresh open new fetcher=" + fetcher);
             }
@@ -108,8 +112,8 @@ public class SyncMetaRefresh extends MetaRefresh {
     }
 
     public static class Factory implements MetaRefresh.Factory<SyncMetaRefresh> {
-        public SyncMetaRefresh newRefresher(int metaInterval, ClusterConsumer clusterConsumer) {
-            return new SyncMetaRefresh(metaInterval, clusterConsumer);
+        public SyncMetaRefresh newRefresher(int metaInterval, Set<Broker> metaBrokers, ClusterConsumer clusterConsumer) {
+            return new SyncMetaRefresh(metaInterval, metaBrokers, clusterConsumer);
         }
     }
 }

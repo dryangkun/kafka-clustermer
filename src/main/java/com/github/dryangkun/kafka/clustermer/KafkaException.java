@@ -27,4 +27,8 @@ public class KafkaException extends Exception {
     public Partition getPart() {
         return part;
     }
+
+    public boolean needRefresh() {
+        return errorCode != ErrorMapping.OffsetOutOfRangeCode();
+    }
 }

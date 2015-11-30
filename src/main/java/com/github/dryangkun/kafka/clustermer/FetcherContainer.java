@@ -1,27 +1,28 @@
 package com.github.dryangkun.kafka.clustermer;
 
 import kafka.javaapi.consumer.SimpleConsumer;
+import org.apache.log4j.Logger;
 
 import java.util.Collection;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * thread-safe
+ * non thread-safe
  */
-public class FetcherContainer implements Comparable<FetcherContainer> {
+public class FetcherContainer {
 
-    private final Set<Fetcher> fetchers = new TreeSet<Fetcher>();
+    private final static Logger LOG = Logger.getLogger(FetcherContainer.class);
+
+    private final Map<Partition, Fetcher> partFetchers = new TreeMap<Partition, Fetcher>();
     private final LinkedBlockingQueue<Fetcher> queue = new LinkedBlockingQueue<Fetcher>(1024);
     private final int id;
     private final ClusterConsumer clusterConsumer;
-    private final Connections connections;
 
     public FetcherContainer(int id, ClusterConsumer clusterConsumer) {
         this.id = id;
         this.clusterConsumer = clusterConsumer;
-        this.connections = clusterConsumer.getConnections();
     }
 
     public int getId() {
@@ -36,39 +37,44 @@ public class FetcherContainer implements Comparable<FetcherContainer> {
         }
     }
 
-    public synchronized Collection<Fetcher> getFetchers() {
+    public Collection<Fetcher> getFetchers() {
         Fetcher fetcher;
         while ((fetcher = queue.poll()) != null) {
             if (fetcher.isClosing()) {
-                fetchers.remove(fetcher);
-                connections.returnConsumer(fetcher.getBroker(), fetcher.getConsumer());
+                partFetchers.remove(fetcher.getPart());
+                clusterConsumer.connections.returnConsumer(fetcher.getBroker(), fetcher.getConsumer());
             } else {
-                SimpleConsumer consumer = connections.getConsumer(fetcher.getBroker());
+                SimpleConsumer consumer = clusterConsumer.connections.getConsumer(fetcher.getBroker());
                 fetcher.setConsumer(consumer);
-                fetchers.add(fetcher);
+                partFetchers.put(fetcher.getPart(), fetcher);
             }
         }
-        return fetchers;
+        return partFetchers.values();
     }
 
-    public synchronized void closeFetcher(Fetcher fetcher) {
-        fetchers.remove(fetcher);
-        connections.returnConsumer(fetcher.getBroker(), fetcher.getConsumer());
+    public Fetcher getFetcher(Partition part) {
+        return partFetchers.get(part);
     }
 
-    public synchronized void closeAllFetchers() {
+    public void closeFetcher(Fetcher fetcher) {
+        partFetchers.remove(fetcher.getPart());
+        clusterConsumer.connections.returnConsumer(fetcher.getBroker(), fetcher.getConsumer());
+    }
+
+    public void closeAllFetchers() {
         Collection<Fetcher> fetchers = getFetchers();
         for (Fetcher fetcher : fetchers) {
-            connections.returnConsumer(fetcher.getBroker(), fetcher.getConsumer());
+            clusterConsumer.connections.returnConsumer(fetcher.getBroker(), fetcher.getConsumer());
         }
         fetchers.clear();
     }
 
-    public void refreshFetcher(Fetcher oldFetcher) throws Exception {
-        clusterConsumer.getMetaRefresh().refresh(oldFetcher);
-    }
-
-    public int compareTo(FetcherContainer container) {
-        return fetchers.size() - container.fetchers.size();
+    public void refreshFetcher(Fetcher fetcher) {
+        try {
+            closeFetcher(fetcher);
+            clusterConsumer.getMetaRefresh().refresh(fetcher);
+        } catch (Exception e) {
+            LOG.error("refresh fetcher fail", e);
+        }
     }
 }

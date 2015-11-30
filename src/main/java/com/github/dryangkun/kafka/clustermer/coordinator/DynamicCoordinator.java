@@ -42,7 +42,11 @@ public class DynamicCoordinator implements Coordinator, Serializable {
         return this;
     }
 
-    public List<Fetcher> coordinate(ClusterConsumer clusterConsumer) throws Exception {
+    public List<String> getTopics() {
+        return new ArrayList<String>(topics);
+    }
+
+    public LinkedHashMap<Partition, Broker> coordinate(Map<Partition, Broker> partBrokers) throws Exception {
         if (topics.isEmpty()) {
             throw new IllegalArgumentException("topics must set");
         }
@@ -50,10 +54,7 @@ public class DynamicCoordinator implements Coordinator, Serializable {
             throw new IllegalArgumentException("index and total must set");
         }
 
-        List<Fetcher> fetchers = new ArrayList<Fetcher>();
-        Map<Partition, Broker> partBrokers =
-                clusterConsumer.findPartBrokers(new ArrayList<String>(topics));
-
+        LinkedHashMap<Partition, Broker> result = new LinkedHashMap<Partition, Broker>();
         Map<String,Integer> topicIndexMap = new HashMap<String, Integer>();
         for (String topic : topics) {
             int index = (int) (Crc32.crc32(topic.getBytes()) % total);
@@ -64,10 +65,9 @@ public class DynamicCoordinator implements Coordinator, Serializable {
             int i = topicIndexMap.get(part.getTopic()) + part.getId();
             i = i % total;
             if (i == index) {
-                Broker broker = partBrokers.get(part);
-                fetchers.add(clusterConsumer.newFetcher(broker, part));
+                result.put(part, partBrokers.get(part));
             }
         }
-        return fetchers;
+        return result;
     }
 }

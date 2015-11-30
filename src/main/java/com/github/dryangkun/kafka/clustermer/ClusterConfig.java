@@ -13,21 +13,18 @@ import java.util.TreeSet;
 
 public class ClusterConfig implements Serializable {
 
-    private int soTimeout = 0;
-    private int bufferSize = 2 * 1024 * 1024;
+    private int soTimeout = 30 * 1000;
+    private int bufferSize = 64 * 1024;
     private String clientId;
 
-    private int fetchSize = 2048;
-    private int maxWait = FetchRequest.DefaultMaxWait();
-    private int minBytes = FetchRequest.DefaultMinBytes();
+    private int fetchSize = 1024 * 1024;
+    private int maxWait = 100;
+    private int minBytes = 1;
 
     private Set<Broker> metaBrokers = new TreeSet<Broker>();
     private int concurrency = 1;
     private int metaInterval = 60;
     private MetaRefresh.Factory metaRrefreshFactory;
-
-    private Coordinator coordinator;
-    private StorageBuilder storageBuilder;
 
     private FetcherMode fetcherMode = FetcherMode.STORAGE_OR_LATEST;
 
@@ -180,25 +177,6 @@ public class ClusterConfig implements Serializable {
      */
     public ClusterConfig setMetaInterval(int metaInterval) {
         this.metaInterval = metaInterval;
-        return this;
-    }
-
-    public Coordinator getCoordinator() {
-        return coordinator;
-    }
-
-    public ClusterConfig setCoordinator(Coordinator coordinator) {
-        this.coordinator = coordinator;
-        return this;
-    }
-
-    public StorageBuilder getStorageBuilder() {
-        return storageBuilder;
-    }
-
-    public ClusterConfig setStorageBuilder(StorageBuilder storageBuilder) {
-        this.storageBuilder = storageBuilder;
-        this.storageBuilder.setClusterConfig(this);
         return this;
     }
 

@@ -14,28 +14,20 @@ import java.util.concurrent.TimeUnit;
 
 public class ClusterConsumerTest {
 
-    private interface StorageInit<A extends Storage> {
-        void init(A storage) throws Exception;
+    public static ClusterConfig newClusterConfig() {
+        return new ClusterConfig()
+                .setConcurrency(1)
+                .setMetaBrokers("10.6.7.218:9092")
+                .setFetcherMode(FetcherMode.STORAGE_OR_EARLIEST)
+                .setFetchSize(29);
     }
 
-    private <A extends Storage> void testConsumer(StorageBuilder storageBuilder,
-                                                  StorageInit<A> storageInit) throws Exception {
+    private <A extends Storage> void testConsumer(ClusterConfig config, Storage storage) throws Exception {
         StaticCoordinator coordinator = new StaticCoordinator()
                 .addTopicParts("test1", 0);
 
-        ClusterConfig config = new ClusterConfig()
-                .setConcurrency(1)
-                .setMetaBrokers(
-                        new Broker("10.6.7.218", 9092)
-                )
-                .setFetcherMode(FetcherMode.STORAGE_OR_EARLIEST)
-                .setFetchSize(29)
-                .setCoordinator(coordinator)
-                .setStorageBuilder(storageBuilder);
-        ClusterConsumer consumer = new ClusterConsumer(config);
+        ClusterConsumer consumer = new ClusterConsumer(config, coordinator, storage);
         consumer.start();
-
-        storageInit.init((A) consumer.getFetcherConfig().storage);
 
         Collection<FetcherContainer> containers = consumer.getFetcherContainers();
         ExecutorService service = Executors.newFixedThreadPool(containers.size());
@@ -45,20 +37,18 @@ public class ClusterConsumerTest {
                 public void run() {
                     try {
                         for (int i = 0; i < 2; i++) {
+                            System.out.println("loop:" + i);
                             Collection<Fetcher> fetchers = container.getFetchers();
                             for (Fetcher fetcher : fetchers) {
-                                if (!fetcher.isBroken()) {
-                                    ByteBufferMessageSet messageSet = fetcher.fetch();
-                                    for (MessageAndOffset messageAndOffset : messageSet) {
-                                        System.out.println(messageAndOffset.nextOffset() + "\t"
-                                                + new String(Fetcher.getBytes(messageAndOffset)));
-                                        fetcher.mark(messageAndOffset);
-                                    }
-                                    fetcher.commit();
-                                    fetcher.broken();
-                                    container.refreshFetcher(fetcher);
-                                    Thread.sleep(1000);
+                                ByteBufferMessageSet messageSet = fetcher.fetch();
+                                for (MessageAndOffset messageAndOffset : messageSet) {
+                                    System.out.println(messageAndOffset.nextOffset() + "\t"
+                                            + new String(Fetcher.getBytes(messageAndOffset)));
+                                    fetcher.mark(messageAndOffset);
                                 }
+                                fetcher.commit();
+                                container.refreshFetcher(fetcher);
+                                Thread.sleep(1000);
                             }
 
                         }
@@ -69,52 +59,55 @@ public class ClusterConsumerTest {
                 }
             });
         }
+        service.shutdown();
 
         while (!service.awaitTermination(1L, TimeUnit.SECONDS));
         consumer.close();
     }
 
     @Test public void testChronic() throws Exception {
-        ChronicleStorageBuilder storageBuilder = new ChronicleStorageBuilder()
+        System.out.println("test chronic");
+        ClusterConfig config = newClusterConfig();
+
+        ChronicleStorage storage = new ChronicleStorageBuilder(config)
                 //.addEndpoint("127.0.0.1", 9002)
                 .setDataDir("/tmp/xxoo")
                 .setId(1)
-                .setPort(9001);
-
-        testConsumer(storageBuilder, new StorageInit<ChronicleStorage>() {
-            public void init(ChronicleStorage storage) throws Exception {
-                storage.getMap().clear();
-            }
-        });
+                .setPort(9001)
+                .newStorage();
+        storage.getMap().clear();
+        testConsumer(config, storage);
     }
 
     @Test public void testRedis() throws Exception {
-        RedisStorageBuilder storageBuilder = new RedisStorageBuilder()
-                .setHost("localhost")
-                .setKey("xxoo");
+        System.out.println("test redis");
+        ClusterConfig config = newClusterConfig();
 
-        testConsumer(storageBuilder, new StorageInit<RedisStorage>() {
-            public void init(RedisStorage storage) throws Exception {
-                Jedis jedis = storage.getJedisPool().getResource();
-                jedis.del(storage.getKey());
-                storage.getJedisPool().returnResource(jedis);
-            }
-        });
+        RedisStorage storage = new RedisStorageBuilder(config)
+                .setHost("localhost")
+                .setKey("xxoo")
+                .newStorage();
+
+        Jedis jedis = storage.getJedisPool().getResource();
+        jedis.del(storage.getKey());
+        storage.getJedisPool().returnResource(jedis);
+        testConsumer(config, storage);
     }
 
     @Test public void testZookeeper() throws Exception {
-        ZookeeperStorageBuilder storageBuilder = new ZookeeperStorageBuilder()
-                .setConnectString("10.6.7.218:2181")
-                .setGroupId("xxoo");
+        System.out.println("test zookeeper");
+        ClusterConfig config = newClusterConfig();
 
-        testConsumer(storageBuilder, new StorageInit<ZookeeperStorage>() {
-            public void init(ZookeeperStorage storage) throws Exception {
-                if (storage.getClient().checkExists().forPath(storage.getPathPrefix()) != null) {
-                    storage.getClient().delete()
-                            .deletingChildrenIfNeeded()
-                            .forPath(storage.getPathPrefix());
-                }
-            }
-        });
+        ZookeeperStorage storage = new ZookeeperStorageBuilder(config)
+                .setConnectString("10.6.7.218:2181")
+                .setGroupId("xxoo")
+                .newStorage();
+
+        if (storage.getClient().checkExists().forPath(storage.getPathPrefix()) != null) {
+            storage.getClient().delete()
+                    .deletingChildrenIfNeeded()
+                    .forPath(storage.getPathPrefix());
+        }
+        testConsumer(config, storage);
     }
 }

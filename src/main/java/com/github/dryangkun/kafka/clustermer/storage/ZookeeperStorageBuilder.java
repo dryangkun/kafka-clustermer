@@ -1,5 +1,6 @@
 package com.github.dryangkun.kafka.clustermer.storage;
 
+import com.github.dryangkun.kafka.clustermer.ClusterConfig;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
@@ -23,6 +24,10 @@ public class ZookeeperStorageBuilder extends StorageBuilder<ZookeeperStorage> im
 
     public interface RetryPolicyFactory extends Serializable {
         RetryPolicy newRetryPolicy();
+    }
+
+    public ZookeeperStorageBuilder(ClusterConfig clusterConfig) {
+        super(clusterConfig);
     }
 
     /**
