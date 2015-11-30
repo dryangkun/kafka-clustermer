@@ -65,12 +65,12 @@ public class DynamicExample {
                                 }
                                 fetcher.commit();
 
-                            }catch(KafkaException e){
+                            } catch(KafkaException e) {
                                 if (e.needRefresh()) {
                                     container.refreshFetcher(fetcher);
                                 }
                                 e.printStackTrace();
-                            }catch(Exception e){
+                            } catch(Exception e) {
                                 e.printStackTrace();
                             }
                         }
