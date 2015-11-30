@@ -30,77 +30,11 @@ eg:
 ##Static Coordinator
 Each process on multi nodes consume the different partitions within the same topics, And the different partitions are coordinated by config.
 
-code:
-
-```java
-StaticCoordinator coordinator = new StaticCoordinator()
-                .addTopicParts("test1", 0, 1);
-              //.addTopicParts("test1", 2, 3);
-                
-ChronicleStorageBuilder storageBuilder = new ChronicleStorageBuilder()
-                .addEndpoints("172.16.1.103:9000")
-              //.addEndpoints("172.16.1.102:9000")
-                .setDataDir("/tmp/xxoo")
-                .setId(1)
-              //.setId(2)
-                .setPort(9000);
-
-ClusterConfig config = new ClusterConfig()
-        .setConcurrency(2)
-        .setMetaBrokers("172.16.1.100:9092,172.16.1.101:9092")
-        .setFetcherMode(FetcherMode.STORAGE_OR_EARLIEST)
-        .setCoordinator(coordinator)
-        .setStorageBuilder(storageBuilder);
-ClusterConsumer consumer = new ClusterConsumer(config);
-consumer.start();
-
-Collection<FetcherContainer> containers = consumer.getFetcherContainers();
-ExecutorService service = Executors.newFixedThreadPool(containers.size());
-
-for (final FetcherContainer container : containers) {
-    service.submit(new Runnable() {
-        public void run() {
-            for (int i = 0; i < 2; i++) {
-                try {
-                    Collection<Fetcher> fetchers = container.getFetchers();
-                    for (Fetcher fetcher : fetchers) {
-                        if (!fetcher.isBroken()) {
-                            ByteBufferMessageSet messageSet = fetcher.fetch();
-                            for (MessageAndOffset messageAndOffset : messageSet) {
-                                System.out.println(messageAndOffset.nextOffset() + "\t"
-                                        + new String(Fetcher.getBytes(messageAndOffset)));
-                                fetcher.mark(messageAndOffset);
-                            }
-                        }
-                    }
-                    fetcher.commit();
-                } catch (KafkaException e) {
-                    e.printStackTrace();
-                    fetcher.broken();
-                    container.getClusterConsumer().refresh(fetcher);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            
-            }
-            container.closeAllFetchers();
-        }
-    });
-}
-
-while (!service.awaitTermination(1L, TimeUnit.SECONDS));
-consumer.close();
-```
+see [StaticExample](./src/test/java/com/github/dryangkun/kafak/clustermer/examples/StaticExample)
 
 ##Dynamic Coordinator
 Each process on multi nodes consume the different partitions within the same topics, Each process is configured the total nodes and the index of the node.
 
 Then then dynamic coordinator calculate the partitions in each process.
 
-```java
-DynamicCoordinator coordinator = new DynamicCoordinator()
-                .setTopics("test1")
-                .setIndexAndTotal(0, 2);
-              //.setIndexAndTotal(1, 2);
-//same with static coordinator
-```
+see [DynamicExample](./src/test/java/com/github/dryangkun/kafak/clustermer/examples/DynamicExample)

@@ -1,5 +1,2 @@
-1，provide handling ioexception/kafak exception for the more way
-2，to then fetcher, use simple consumer with reference count way
-3，more complicate coordinator that can take some partitions when other nodes fail
-4，more useful command line tools
-5，extract the meta refresh from CluserConsumer
+more complicate coordinator that can take some partitions when other nodes fail
+more useful command line tools
