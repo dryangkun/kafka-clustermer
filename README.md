@@ -30,11 +30,11 @@ eg:
 ##Static Coordinator
 Each process on multi nodes consume the different partitions within the same topics, And the different partitions are coordinated by config.
 
-see [StaticExample](./src/test/java/com/github/dryangkun/kafak/clustermer/examples/StaticExample)
+see [StaticExample](./src/test/java/com/github/dryangkun/kafak/clustermer/examples/StaticExample.java)
 
 ##Dynamic Coordinator
 Each process on multi nodes consume the different partitions within the same topics, Each process is configured the total nodes and the index of the node.
 
 Then then dynamic coordinator calculate the partitions in each process.
 
-see [DynamicExample](./src/test/java/com/github/dryangkun/kafak/clustermer/examples/DynamicExample)
+see [DynamicExample](./src/test/java/com/github/dryangkun/kafak/clustermer/examples/DynamicExample.java)
