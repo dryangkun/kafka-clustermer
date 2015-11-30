@@ -53,10 +53,10 @@ public class DynamicExample {
         for (final FetcherContainer container : containers) {
             service.submit(new Runnable() {
                 public void run() {
-                    try {
-                        for (int i = 0; i < 2; i++) {
-                            Collection<Fetcher> fetchers = container.getFetchers();
-                            for (Fetcher fetcher : fetchers) {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        Collection<Fetcher> fetchers = container.getFetchers();
+                        for (Fetcher fetcher : fetchers) {
+                            try {
                                 ByteBufferMessageSet messageSet = fetcher.fetch();
                                 for (MessageAndOffset messageAndOffset : messageSet) {
                                     System.out.println(messageAndOffset.nextOffset() + "\t"
@@ -64,18 +64,24 @@ public class DynamicExample {
                                     fetcher.mark(messageAndOffset);
                                 }
                                 fetcher.commit();
-                            }
 
+                            }catch(KafkaException e){
+                                if (e.needRefresh()) {
+                                    container.refreshFetcher(fetcher);
+                                }
+                                e.printStackTrace();
+                            }catch(Exception e){
+                                e.printStackTrace();
+                            }
                         }
-                    } catch (Exception e) {
-                        e.printStackTrace();
                     }
                     container.closeAllFetchers();
                 }
             });
         }
+        Thread.sleep(10000L);
 
-        service.shutdown();
+        service.shutdownNow();
         while (!service.awaitTermination(1L, TimeUnit.SECONDS));
         consumer.close();
 

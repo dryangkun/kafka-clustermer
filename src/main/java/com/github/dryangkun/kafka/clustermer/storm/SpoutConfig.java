@@ -45,7 +45,7 @@ public class SpoutConfig implements Serializable {
     public int commitPerIntervalMs = 3000;
     /**
      * the max number of once filling the pending list
-     * 
+     *
      */
     public int pendingMaxSize = 8192;
 }
