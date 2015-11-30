@@ -4,7 +4,7 @@ a simple high level consumer running on multi nodes fetch kafka in the same topi
 #Why To Use
 
 ##Simply Consume The Same Topics On Multi Nodes
-If we want to use a high level consumer running on multi nodes, We need use stream cluster system like storm/spark streaming. 
+If we want to use a high level consumer running on multi nodes, We need use stream cluster system like storm/spark streaming.
 
 But sometimes we just want simply to consume the same topics on multi nodes, You can use Kafka Clustermer.
 
@@ -16,6 +16,9 @@ Using Kafka Clustermer, You can control the offset's commit, And it fetch data t
 ##More Offset Storage
 Kafka high level consumer just support zookeeper and kafka offset storage, 
 But Kafka Clustermer support zookeeper, redis, and more simple [chronic-map](https://github.com/OpenHFT/Chronicle-Map).
+
+##Support Storm
+[KafkaSpout](./src/main/java/com/github/dryangkun/kafka/clustermer/storm/KafkaSpout.java), it can consume multi topics than [storm-kafka](http://repo1.maven.org/maven2/org/apache/storm/storm-kafka/0.9.5/)
 
 
 #How To Use
@@ -37,4 +40,5 @@ Each process on multi nodes consume the different partitions within the same top
 
 Then then dynamic coordinator calculate the partitions in each process.
 
-see [DynamicExample](./master/src/test/java/com/github/dryangkun/kafka/clustermer/examples/DynamicExample.java)
+see [DynamicExample](./src/test/java/com/github/dryangkun/kafka/clustermer/examples/DynamicExample.java)
+
